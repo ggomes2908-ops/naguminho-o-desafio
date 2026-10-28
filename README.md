@@ -17,3 +17,9 @@ A velocidade de queda aumenta com o tempo de sobrevivência e com a pontuação.
 - Recordes por nome são salvos localmente no navegador/dispositivo; não sincronizam automaticamente entre aparelhos.
 
 Mantenha `index.html`, `style.css`, `game.js` e todas as imagens na mesma pasta.
+
+
+## V14 — correção do ranking
+- O salvamento do ranking agora trata erros de armazenamento sem interromper o jogo.
+- As pontuações são consolidadas por nome e a melhor pontuação de cada jogador é mantida no Top 10.
+- Se o navegador bloquear o armazenamento permanente, o jogo avisa que a pontuação só ficará disponível durante a sessão. Para persistência normal, permita dados do site no navegador.

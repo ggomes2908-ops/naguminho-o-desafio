@@ -10,9 +10,39 @@
   let photo = null, photoUrl = null, usingOriginalPhoto = true, running = false, gameOver = false, animationId = null;
   let width = 800, height = 500, lastTime = 0, spawnTimer = 0, elapsedTime = 0, score = 0, lives = 3, pizzaStreak = 0, items = [], particles = [], spawnCount = 0;
   let player = { x: 400, y: 420, w: 118, h: 170, speed: 450 };
+  let playerScale = 1;
+  function updatePlayerSize() {
+    // Reduz proporcionalmente o personagem em telas estreitas, mantendo proporções e colisão.
+    playerScale = Math.max(0.58, Math.min(1, width / 800));
+    player.w = 118 * playerScale;
+    player.h = 170 * playerScale;
+    player.y = height - (178 * playerScale) / 2 - 6;
+    player.x = Math.min(Math.max(player.x, player.w / 2), width - player.w / 2);
+  }
   let keys = { left:false, right:false }, soundOn = true, audioCtx = null, toastTimer = null;
   let nickname = 'Paulo Henrique', gameTitle = 'Missão Pizza do Naguminho', jokes = [];
-  let best = Number(localStorage.getItem('chuvaMemesBest') || 0);
+  // Armazenamento defensivo: alguns navegadores/modos privados podem bloquear localStorage.
+  const memoryStore = Object.create(null);
+  let memoryLeaderboard = [];
+  function storageGet(key, fallback = null) {
+    try {
+      const value = localStorage.getItem(key);
+      return value === null ? fallback : value;
+    } catch (error) {
+      return Object.prototype.hasOwnProperty.call(memoryStore, key) ? memoryStore[key] : fallback;
+    }
+  }
+  function storageSet(key, value) {
+    const stringValue = String(value);
+    memoryStore[key] = stringValue;
+    try {
+      localStorage.setItem(key, stringValue);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+  let best = Number(storageGet('chuvaMemesBest', '0')) || 0;
   bestEl.textContent = String(best).padStart(4,'0');
   // Personagem completo enviado pelo usuário, recortado para fundo transparente.
   const characterSprite = new Image();
@@ -115,19 +145,35 @@
     overlayBtn.action = action; overlay.classList.remove('hidden');
   }
   function getLeaderboard() {
-    try { return JSON.parse(localStorage.getItem('naguminhoLeaderboard') || '[]'); }
-    catch (e) { return []; }
+    try {
+      const parsed = JSON.parse(storageGet('naguminhoLeaderboard', '[]'));
+      if (Array.isArray(parsed)) {
+        memoryLeaderboard = parsed.filter(entry => entry && typeof entry.name === 'string')
+          .map(entry => ({ name: entry.name, best: Number(entry.best) || 0 }));
+        return memoryLeaderboard.slice();
+      }
+    } catch (e) { /* usa a cópia em memória se o armazenamento estiver indisponível */ }
+    return memoryLeaderboard.slice();
   }
   function savePlayerScore() {
-    const board = getLeaderboard();
-    const key = nickname.trim().toLocaleLowerCase('pt-BR');
-    const existing = board.find(entry => entry.name.trim().toLocaleLowerCase('pt-BR') === key);
-    if (existing) existing.best = Math.max(Number(existing.best)||0, score);
-    else board.push({name:nickname.trim(), best:score});
-    board.sort((a,b) => b.best-a.best);
-    const top = board.slice(0,10);
-    localStorage.setItem('naguminhoLeaderboard', JSON.stringify(top));
-    renderLeaderboard();
+    try {
+      const board = getLeaderboard();
+      const cleanName = (nickname || nicknameInput.value || 'Jogador').trim() || 'Jogador';
+      const key = cleanName.toLocaleLowerCase('pt-BR');
+      const existing = board.find(entry => entry.name.trim().toLocaleLowerCase('pt-BR') === key);
+      if (existing) existing.best = Math.max(Number(existing.best) || 0, Number(score) || 0);
+      else board.push({ name: cleanName, best: Number(score) || 0 });
+      board.sort((a, b) => b.best - a.best);
+      memoryLeaderboard = board.slice(0, 10);
+      const persisted = storageSet('naguminhoLeaderboard', JSON.stringify(memoryLeaderboard));
+      renderLeaderboard();
+      if (!persisted) showToast('Pontuação registrada nesta sessão, mas o navegador bloqueou o salvamento permanente.');
+      return true;
+    } catch (error) {
+      showToast('Não foi possível salvar a pontuação. Verifique as permissões de armazenamento do navegador.');
+      renderLeaderboard();
+      return false;
+    }
   }
   function renderLeaderboard() {
     const list = $('leaderboardList');
@@ -147,7 +193,7 @@
   function startGame() {
     overlay.classList.add('hidden');
     stopGame(); score = 0; lives = 3; pizzaStreak = 0; items = []; particles = []; spawnTimer = 0; spawnCount = 0; elapsedTime = 0; lastTime = 0; gameOver = false;
-    player.x = width/2; player.y = height-95; running = true;
+    updatePlayerSize(); player.x = width/2; running = true;
     updateHUD(); animationId = requestAnimationFrame(loop);
   }
   function stopGame() { running = false; if (animationId) cancelAnimationFrame(animationId); animationId = null; }
@@ -155,7 +201,7 @@
   function endGameInstant() {
     stopGame(); gameOver = true; savePlayerScore();
     const finalBest = Math.max(best, score);
-    if (finalBest > best) { best = finalBest; localStorage.setItem('chuvaMemesBest', String(best)); }
+    if (finalBest > best) { best = finalBest; storageSet('chuvaMemesBest', String(best)); }
     bestEl.textContent = String(best).padStart(4,'0');
     showOverlay('🚨','FIM DE JOGO INSTANTÂNEO','MATHEUS PETISTA APARECEU!',`Paulo Henrique encontrou o Matheus Petista. Fim de jogo imediato com ${score} pontos.`, 'TENTAR DE NOVO ↻', startGame);
   }
@@ -163,7 +209,7 @@
   function endGame() {
     stopGame(); gameOver = true; savePlayerScore();
     const finalBest = Math.max(best, score);
-    if (finalBest > best) { best = finalBest; localStorage.setItem('chuvaMemesBest', String(best)); }
+    if (finalBest > best) { best = finalBest; storageSet('chuvaMemesBest', String(best)); }
     bestEl.textContent = String(best).padStart(4,'0');
   // Personagem completo enviado pelo usuário, recortado para fundo transparente.
   const characterSprite = new Image();
@@ -334,10 +380,10 @@
   function drawPlayer() {
     const x=player.x, y=player.y;
     ctx.save();
-    ctx.fillStyle='#002c3d55';ctx.beginPath();ctx.ellipse(x,y+76,50,10,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#002c3d55';ctx.beginPath();ctx.ellipse(x,y+76*playerScale,50*playerScale,10*playerScale,0,0,Math.PI*2);ctx.fill();
     if (characterSprite.complete && characterSprite.naturalWidth) {
       const ratio=characterSprite.naturalWidth/characterSprite.naturalHeight;
-      const drawH=178, drawW=drawH*ratio;
+      const drawH=178*playerScale, drawW=drawH*ratio;
       ctx.drawImage(characterSprite,x-drawW/2,y-drawH/2,drawW,drawH);
     } else {
       ctx.fillStyle='#f7f3ed';ctx.beginPath();ctx.ellipse(x,y,40,65,0,0,Math.PI*2);ctx.fill();
@@ -346,24 +392,13 @@
     ctx.restore();
   }
 
-  function isTextEntryTarget(target) {
-    return !!target && (
-      target.isContentEditable ||
-      target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.tagName === 'SELECT'
-    );
-  }
   window.addEventListener('keydown', e=>{
-    // Não interceptar teclas enquanto o jogador digita nome ou outros campos.
-    if (isTextEntryTarget(e.target)) return;
     if(['ArrowLeft','ArrowRight','a','A','d','D'].includes(e.key)) e.preventDefault();
     if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=true;
     if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=true;
     if(e.key==='Enter' && !overlay.classList.contains('hidden')) overlayBtn.click();
   });
   window.addEventListener('keyup', e=>{
-    if (isTextEntryTarget(e.target)) return;
     if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') keys.left=false;
     if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') keys.right=false;
   });
